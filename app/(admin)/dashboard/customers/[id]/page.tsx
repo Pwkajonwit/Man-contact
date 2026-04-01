@@ -2,14 +2,15 @@
 
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { useRouter, useParams } from 'next/navigation';
+import { ArrowLeft, Save, UserCheck, Loader2 } from 'lucide-react';
 import { db } from '@/lib/firebase/config';
+import { emptyCustomerFormData, hydrateCustomerFormData } from '@/lib/customer';
 import CorporateInput from '@/components/ui/CorporateInput';
 import CorporateTextarea from '@/components/ui/CorporateTextarea';
 import CorporateButton from '@/components/ui/CorporateButton';
 import CorporateCard from '@/components/ui/CorporateCard';
 import NestedCategorySelect from '@/components/ui/NestedCategorySelect';
-import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, Save, UserCheck, Loader2 } from 'lucide-react';
 
 const EditCustomerPage = () => {
   const router = useRouter();
@@ -17,32 +18,23 @@ const EditCustomerPage = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [formData, setFormData] = useState({
-    name: '',
-    phone: '',
-    details: '',
-    category_id: ''
-  });
+  const [formData, setFormData] = useState(emptyCustomerFormData);
 
   useEffect(() => {
     const fetchCustomer = async () => {
       if (!id) return;
+
       try {
         const docRef = doc(db, 'customers', id as string);
         const docSnap = await getDoc(docRef);
+
         if (docSnap.exists()) {
-          const data = docSnap.data();
-          setFormData({
-            name: data.name || '',
-            phone: data.phone || '',
-            details: data.details || '',
-            category_id: data.category_id || ''
-          });
+          setFormData(hydrateCustomerFormData(docSnap.data()));
         } else {
           router.push('/dashboard/customers');
         }
       } catch (error) {
-        console.error("Error fetching customer:", error);
+        console.error('Error fetching customer:', error);
       } finally {
         setLoading(false);
       }
@@ -55,30 +47,34 @@ const EditCustomerPage = () => {
     e.preventDefault();
     setSaving(true);
     setShowSuccess(false);
+
     try {
-      await updateDoc(doc(db, 'customers', id as string), formData);
+      await updateDoc(doc(db, 'customers', id as string), {
+        ...formData,
+      });
       setShowSuccess(true);
-      // Auto-hide success message after 3 seconds
       setTimeout(() => setShowSuccess(false), 3000);
     } catch (error) {
-      console.error("Error updating customer:", error);
+      console.error('Error updating customer:', error);
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-[400px]">
-      <Loader2 className="animate-spin text-brand-green" size={48} />
-    </div>
-  );
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="animate-spin text-brand-green" size={48} />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <CorporateButton 
-          variant="outline" 
-          size="sm" 
+        <CorporateButton
+          variant="outline"
+          size="sm"
           onClick={() => router.push('/dashboard/customers')}
           className="p-2 min-w-0"
         >
@@ -93,9 +89,10 @@ const EditCustomerPage = () => {
       <CorporateCard className="bg-brand-white p-8 relative overflow-hidden">
         {showSuccess && (
           <div className="absolute top-0 left-0 right-0 p-3 bg-brand-green text-brand-white text-center text-xs font-black uppercase tracking-[.2em] animate-in slide-in-from-top duration-300">
-             Saved Successfully - Data Instance Sync Verified
+            Saved successfully
           </div>
         )}
+
         <form onSubmit={handleSubmit} className="space-y-6 pt-4">
           <div className="flex items-center gap-2 mb-4">
             <div className="p-2 bg-brand-green/10 rounded-md">
@@ -106,16 +103,28 @@ const EditCustomerPage = () => {
 
           <div className="space-y-4">
             <CorporateInput
-              label="Full Name"
+              label="Customer / Company Name"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               required
             />
-            
+
             <CorporateInput
-              label="Phone Number"
+              label="Contact Name"
+              value={formData.contact_name}
+              onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })}
+            />
+
+            <CorporateInput
+              label="Primary Phone Number"
               value={formData.phone}
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+            />
+
+            <CorporateInput
+              label="Backup Phone Number"
+              value={formData.backup_phone}
+              onChange={(e) => setFormData({ ...formData, backup_phone: e.target.value })}
             />
 
             <div className="flex flex-col gap-2">
@@ -124,9 +133,23 @@ const EditCustomerPage = () => {
               </label>
               <NestedCategorySelect
                 selectedId={formData.category_id}
-                onSelect={(id) => setFormData({ ...formData, category_id: id })}
+                onSelect={(selectedId) => setFormData({ ...formData, category_id: selectedId })}
               />
             </div>
+
+            <CorporateTextarea
+              label="Map / Location"
+              className="min-h-[88px]"
+              value={formData.map_location}
+              onChange={(e) => setFormData({ ...formData, map_location: e.target.value })}
+            />
+
+            <CorporateInput
+              label="Map Link"
+              type="url"
+              value={formData.map_link}
+              onChange={(e) => setFormData({ ...formData, map_link: e.target.value })}
+            />
 
             <CorporateTextarea
               label="Additional Details"
@@ -139,7 +162,7 @@ const EditCustomerPage = () => {
             <CorporateButton
               type="submit"
               fullWidth
-              disabled={saving}
+              disabled={saving || !formData.name || !formData.category_id}
               className="gap-2"
             >
               {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}

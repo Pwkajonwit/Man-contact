@@ -2,17 +2,30 @@ import type { Metadata } from "next";
 import { Sarabun } from "next/font/google";
 import "./globals.css";
 
-// Configure Sarabun with a CSS Variable
-const sarabun = Sarabun({ 
+const sarabun = Sarabun({
   subsets: ["thai", "latin"],
   weight: ["100", "200", "300", "400", "500", "600", "700", "800"],
   display: "swap",
-  variable: '--font-sarabun', // Add CSS variable
+  variable: "--font-sarabun",
 });
 
 export const metadata: Metadata = {
-  title: "Corporate | Data Management System",
-  description: "Enterprise Customer and Employee Data Management System",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
+  title: "Contacts",
+  description: "ระบบจัดการรายชื่อผู้ติดต่อ",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    shortcut: "/favicon.ico",
+  },
+  appleWebApp: {
+    capable: true,
+    title: "Man Contacts",
+    statusBarStyle: "default",
+  },
 };
 
 export default function RootLayout({
