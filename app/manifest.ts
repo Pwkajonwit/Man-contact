@@ -3,9 +3,11 @@ import type { MetadataRoute } from 'next';
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'Man Contacts',
-    short_name: 'Man Contacts',
-    description: 'Business contact and employee directory management system.',
-    start_url: '/',
+    short_name: 'Contacts',
+    description: 'contact and employee.',
+    id: '/home',
+    start_url: '/home',
+    scope: '/',
     display: 'standalone',
     background_color: '#f3f4f6',
     theme_color: '#16A34A',
