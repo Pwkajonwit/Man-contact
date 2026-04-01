@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-dark: #0F172A;
+  /* Slate 900 for max contrast */
+  --color-brand-green: #65A30D;
+  /* Slightly deeper green for contrast */
+  --color-brand-green-light: #84CC16;
+  --color-brand-gray: #f0f0f0;
+  /* Slate 50 for cool, sharp background */
+  --color-brand-white: #FFFFFF;
+  --color-brand-border: #CBD5E1;
+  /* Slate 300 for visible lines */
+  --font-sans: var(--font-sarabun), "Sarabun", sans-serif;
+  --font-heading: var(--font-sarabun), "Sarabun", sans-serif;
+}
+
+body {
+  @apply bg-brand-gray text-brand-dark antialiased;
+  font-family: var(--font-sarabun), "Sarabun", sans-serif;
+}
+
+/* Force all controls to use Sarabun */
+*,
+input,
+button,
+select,
+p,
+span,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-sarabun), "Sarabun", sans-serif;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  @apply tracking-tighter font-black text-brand-dark;
+  /* Removed uppercase to show True Sarabun Thai shapes clearly */
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-brand-gray;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-brand-green/30 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-brand-green;
+}
+
+label {
+  @apply tracking-widest uppercase font-black text-[10px] text-brand-dark/70;
+}
+
+::placeholder {
+  @apply text-brand-dark/40 font-bold;
+}
