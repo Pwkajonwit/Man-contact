@@ -16,7 +16,7 @@
 }
 
 body {
-  @apply bg-brand-gray text-brand-dark antialiased;
+  @apply bg-brand-gray text-brand-dark subpixel-antialiased;
   font-family: var(--font-sarabun), "Sarabun", sans-serif;
 }
 
@@ -59,9 +59,9 @@ h6 {
 }
 
 label {
-  @apply tracking-widest uppercase font-black text-[10px] text-brand-dark/70;
+  @apply text-xs font-bold tracking-wide text-brand-dark/75;
 }
 
 ::placeholder {
-  @apply text-brand-dark/40 font-bold;
+  @apply font-medium text-brand-dark/40;
 }

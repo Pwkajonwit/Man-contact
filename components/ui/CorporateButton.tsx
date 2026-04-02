@@ -15,7 +15,7 @@ const CorporateButton: React.FC<ButtonProps> = ({
   children,
   ...props
 }) => {
-  const baseStyles = "inline-flex items-center justify-center font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-brand-green focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none rounded-md uppercase tracking-wide text-xs";
+  const baseStyles = "inline-flex items-center justify-center rounded-md text-sm font-semibold tracking-normal transition-colors focus:outline-none focus:ring-2 focus:ring-brand-green focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-50";
   
   const variants = {
     primary: "bg-brand-green text-brand-white hover:opacity-90 active:bg-brand-green/80",

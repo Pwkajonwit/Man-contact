@@ -1,36 +1,36 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  addDoc,
   collection,
-  query,
-  orderBy,
+  deleteDoc,
+  doc,
   getDocs,
   limit,
   onSnapshot,
-  doc,
-  deleteDoc,
-  addDoc,
+  orderBy,
+  query,
   serverTimestamp,
 } from 'firebase/firestore';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  Search,
-  Download,
   ArrowUpDown,
-  Edit2,
-  Trash2,
-  Eye,
-  X,
-  Phone,
-  MapPin,
   Calendar,
-  User,
-  Info,
-  Upload,
-  Loader2,
+  Download,
+  Edit2,
   ExternalLink,
+  Eye,
+  Info,
+  Loader2,
+  MapPin,
+  Phone,
+  Search,
+  Trash2,
+  Upload,
+  User,
+  X,
 } from 'lucide-react';
 import { db } from '@/lib/firebase/config';
 import { formatPhoneDisplay, normalizePhone, type CustomerRecord } from '@/lib/customer';
@@ -45,6 +45,8 @@ interface Category {
 }
 
 const escapeCsvValue = (value: string) => `"${value.replace(/"/g, '""')}"`;
+
+const normalizeCsvHeader = (value: string) => value.replace(/^\uFEFF/, '').trim().toLowerCase();
 
 const parseCsvLine = (line: string) => {
   const values: string[] = [];
@@ -78,6 +80,17 @@ const parseCsvLine = (line: string) => {
   return values;
 };
 
+const getRowValue = (row: string[], headerIndexMap: Record<string, number>, headers: string[]) => {
+  for (const header of headers) {
+    const index = headerIndexMap[normalizeCsvHeader(header)];
+    if (index !== undefined) {
+      return row[index]?.trim() ?? '';
+    }
+  }
+
+  return '';
+};
+
 const CustomerTable = () => {
   const router = useRouter();
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
@@ -101,7 +114,7 @@ const CustomerTable = () => {
       depth += 1;
     }
 
-    return parts.length > 0 ? parts.join(' > ') : 'Unknown';
+    return parts.length > 0 ? parts.join(' > ') : 'ไม่ระบุหมวดหมู่';
   };
 
   useEffect(() => {
@@ -203,36 +216,74 @@ const CustomerTable = () => {
       const text = event.target?.result as string;
       const lines = text
         .split(/\r?\n/)
-        .map((line) => line.trim())
+        .map((line) => line.replace(/\r/g, ''))
         .filter(Boolean)
         .map(parseCsvLine);
 
+      if (lines.length <= 1) {
+        alert('ไฟล์ไม่มีข้อมูลสำหรับนำเข้า');
+        setIsImporting(false);
+        e.target.value = '';
+        return;
+      }
+
+      const headerIndexMap = lines[0].reduce<Record<string, number>>((acc, header, index) => {
+        acc[normalizeCsvHeader(header)] = index;
+        return acc;
+      }, {});
+
       const dataRows = lines.slice(1);
       let importedCount = 0;
+      let skippedCount = 0;
+      const failedRows: number[] = [];
 
-      for (const row of dataRows) {
-        if (!row[0]) continue;
+      for (const [rowIndex, row] of dataRows.entries()) {
+        const name = getRowValue(row, headerIndexMap, ['Name', 'ชื่อร้าน', 'ชื่อลูกค้า']);
+        const contactName = getRowValue(row, headerIndexMap, ['Contact Name', 'ชื่อผู้ติดต่อ']);
+        const phone = getRowValue(row, headerIndexMap, ['Phone', 'เบอร์โทร']);
+        const backupPhone = getRowValue(row, headerIndexMap, ['Backup Phone', 'เบอร์สำรอง']);
+        const categoryPath = getRowValue(row, headerIndexMap, ['Category Path', 'หมวดหมู่']);
+        const mapLocation = getRowValue(row, headerIndexMap, ['Map Location', 'สถานที่', 'แผนที่']);
+        const mapLink = getRowValue(row, headerIndexMap, ['Map Link', 'ลิงก์แผนที่']);
+        const details = getRowValue(row, headerIndexMap, ['Details', 'รายละเอียด']);
+
+        if (!name) {
+          skippedCount += 1;
+          continue;
+        }
+
+        const matchedCategoryId =
+          Object.keys(categories).find((id) => getCategoryPath(id) === categoryPath) ?? '';
 
         try {
           await addDoc(collection(db, 'customers'), {
-            name: row[0] || '',
-            contact_name: row[1] || '',
-            phone: row[2] || '',
-            backup_phone: row[3] || '',
-            category_id: 'imported',
-            map_location: row[5] || '',
-            map_link: row[6] || '',
-            details: row[7] || 'Imported from CSV',
+            name,
+            contact_name: contactName,
+            phone,
+            backup_phone: backupPhone,
+            category_id: matchedCategoryId,
+            map_location: mapLocation,
+            map_link: mapLink,
+            details: details || 'Imported from CSV',
             handled_by_uid: 'system-import',
             created_at: serverTimestamp(),
           });
           importedCount += 1;
         } catch (error) {
           console.error('Import error for row:', row, error);
+          failedRows.push(rowIndex + 2);
         }
       }
 
-      alert(`Successfully imported ${importedCount} records.`);
+      const importSummary = [
+        `นำเข้าสำเร็จ ${importedCount} รายการ`,
+        skippedCount > 0 ? `ข้าม ${skippedCount} แถวที่ไม่มีชื่อลูกค้า` : '',
+        failedRows.length > 0 ? `ผิดพลาดที่แถว: ${failedRows.join(', ')}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      alert(importSummary);
       setIsImporting(false);
       e.target.value = '';
     };
@@ -246,7 +297,7 @@ const CustomerTable = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Delete this customer record?')) {
+    if (confirm('ลบข้อมูลลูกค้ารายการนี้ใช่หรือไม่')) {
       await deleteDoc(doc(db, 'customers', id));
     }
   };
@@ -254,38 +305,36 @@ const CustomerTable = () => {
   const tableHeaders = [
     { label: 'ชื่อลูกค้า', key: 'name' },
     { label: 'เบอร์โทร', key: 'phone' },
-    { label: 'รายละเอียดและบันทึก', key: 'details' },
+    { label: 'รายละเอียด', key: 'details' },
     { label: 'หมวดหมู่', key: 'category_id' },
     { label: 'วันที่เพิ่ม', key: 'created_at' },
     { label: 'จัดการ', key: 'actions' },
   ];
 
   return (
-    <CorporateCard className="p-0 border-[#E2E8F0] overflow-hidden relative shadow-sm">
-      <div className="flex flex-col md:flex-row items-center justify-between p-5 gap-4 border-b border-brand-border">
+    <CorporateCard className="overflow-hidden border-slate-300 p-0 shadow-none">
+      <div className="flex flex-col justify-between gap-4 border-b border-brand-border px-5 py-5 md:flex-row md:items-center">
         <div className="flex flex-col">
-          <h3 className="text-lg font-black text-brand-dark tracking-tight leading-none">รายชื่อลูกค้าทั้งหมด</h3>
-          <p className="text-[10px] text-brand-dark/60 font-bold tracking-widest mt-1.5">
-            จัดการข้อมูลผู้ติดต่อในระบบ
-          </p>
+          <h3 className="text-xl font-extrabold leading-none tracking-tight text-brand-dark">รายชื่อลูกค้าทั้งหมด</h3>
+          <p className="mt-2 text-sm font-semibold text-brand-dark/70">จัดการข้อมูลผู้ติดต่อและประวัติลูกค้าในระบบ</p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-dark/50" />
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-dark/55" />
             <input
               type="text"
-              placeholder="ค้นหาชื่อ, ผู้ติดต่อ, เบอร์..."
+              placeholder="ค้นหาชื่อลูกค้า ผู้ติดต่อ หรือเบอร์โทร"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 pr-4 py-2 bg-white rounded-lg text-sm font-medium text-brand-dark border border-brand-border focus:ring-2 focus:ring-brand-green/20 outline-none w-[220px] transition-all placeholder-brand-dark/30 shadow-sm"
+              className="w-[250px] rounded-lg border border-brand-border bg-white py-2.5 pl-10 pr-4 text-base font-medium text-brand-dark outline-none transition-all placeholder:text-brand-dark/35 focus:ring-2 focus:ring-brand-green/15"
             />
           </div>
 
           <select
             value={selectedCategoryId}
             onChange={(e) => setSelectedCategoryId(e.target.value)}
-            className="bg-brand-gray border-transparent rounded-md px-3 py-2 text-xs font-bold text-brand-dark outline-none cursor-pointer max-w-[200px]"
+            className="max-w-[220px] cursor-pointer rounded-lg border border-brand-border bg-white px-3 py-2.5 text-sm font-semibold text-brand-dark outline-none"
           >
             <option value="all">ทุกหมวดหมู่</option>
             {Object.keys(categories).map((id) => (
@@ -295,118 +344,118 @@ const CustomerTable = () => {
             ))}
           </select>
 
-          <CorporateButton variant="outline" size="sm" className="flex items-center gap-1" onClick={handleExport}>
-            <Download size={14} /> ดาวน์โหลด
+          <CorporateButton variant="outline" size="sm" className="gap-2 text-sm font-semibold" onClick={handleExport}>
+            <Download size={15} /> ดาวน์โหลด
           </CorporateButton>
 
           <label className="cursor-pointer">
             <input type="file" accept=".csv" className="hidden" onChange={handleImport} disabled={isImporting} />
             <div
               className={cn(
-                'flex items-center gap-1 px-3 py-2 border border-brand-gray rounded-md hover:bg-brand-gray transition-colors text-xs font-bold text-brand-dark/60',
-                isImporting && 'opacity-50 pointer-events-none'
+                'inline-flex h-9 items-center justify-center gap-2 rounded-md border border-brand-border bg-white px-4 text-sm font-semibold text-brand-dark transition-colors hover:bg-brand-gray',
+                isImporting && 'pointer-events-none opacity-60'
               )}
             >
-              {isImporting ? <Loader2 className="animate-spin" size={14} /> : <Upload size={14} />}
-              อัปโหลด
+              {isImporting ? <Loader2 className="animate-spin" size={15} /> : <Upload size={15} />}
+              {isImporting ? 'กำลังอัปโหลด' : 'อัปโหลด'}
             </div>
           </label>
         </div>
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse">
-          <thead className="bg-[#F8F9FA] border-b border-brand-border">
+        <table className="w-full border-collapse text-left">
+          <thead className="border-b border-brand-border bg-slate-50">
             <tr>
               {tableHeaders.map((header) => (
                 <th
                   key={header.key}
                   className={cn(
-                    'px-4 py-3 text-[11px] font-bold text-brand-dark/70 tracking-wide whitespace-nowrap',
+                    'px-4 py-3 text-xs font-extrabold tracking-wide text-brand-dark/80 whitespace-nowrap',
                     header.key === 'actions' && 'text-center'
                   )}
                 >
                   <div className={cn('flex items-center gap-2', header.key === 'actions' && 'justify-center')}>
                     {header.label}
-                    {header.key !== 'actions' && <ArrowUpDown size={12} strokeWidth={2.5} />}
+                    {header.key !== 'actions' && <ArrowUpDown size={13} strokeWidth={2.4} />}
                   </div>
                 </th>
               ))}
             </tr>
           </thead>
 
-          <tbody className="divide-y divide-brand-border/60">
+          <tbody className="divide-y divide-brand-border/70">
             {loading ? (
               [...Array(5)].map((_, rowIndex) => (
                 <tr key={rowIndex} className="animate-pulse">
                   {[...Array(6)].map((_, cellIndex) => (
                     <td key={cellIndex} className="px-6 py-6">
-                      <div className="h-4 bg-brand-gray rounded w-full"></div>
+                      <div className="h-4 w-full rounded bg-brand-gray"></div>
                     </td>
                   ))}
                 </tr>
               ))
             ) : filteredCustomers.length > 0 ? (
               filteredCustomers.map((customer) => (
-                <tr key={customer.id} className="hover:bg-brand-gray transition-colors group">
-                  <td className="px-4 py-2.5">
+                <tr key={customer.id} className="group transition-colors hover:bg-slate-50">
+                  <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-white border border-brand-border/60 flex items-center justify-center text-brand-green font-black text-xs shrink-0 shadow-sm">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-brand-border bg-white text-sm font-extrabold text-brand-green">
                         {customer.name.substring(0, 2)}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-bold text-brand-dark tracking-tight truncate">{customer.name}</p>
-                        <p className="text-[11px] text-brand-dark/50 truncate">
+                        <p className="truncate text-base font-extrabold tracking-tight text-brand-dark">{customer.name}</p>
+                        <p className="truncate text-sm font-medium text-brand-dark/65">
                           {customer.contact_name || 'ไม่มีชื่อผู้ติดต่อ'}
                         </p>
                       </div>
                     </div>
                   </td>
 
-                  <td className="px-4 py-2.5 text-sm text-brand-dark font-medium whitespace-nowrap">
+                  <td className="px-4 py-3 text-sm font-semibold text-brand-dark whitespace-nowrap">
                     <div className="flex flex-col gap-1">
                       <span>{customer.phone ? formatPhoneDisplay(customer.phone) : 'ไม่มีเบอร์หลัก'}</span>
-                      <span className="text-[11px] text-brand-dark/50">
+                      <span className="text-sm font-medium text-brand-dark/60">
                         {customer.backup_phone ? formatPhoneDisplay(customer.backup_phone) : 'ไม่มีเบอร์สำรอง'}
                       </span>
                     </div>
                   </td>
 
-                  <td className="px-4 py-2.5 max-w-[320px]">
-                    <p className="text-sm text-brand-dark/70 leading-6 line-clamp-2">
+                  <td className="max-w-[340px] px-4 py-3">
+                    <p className="line-clamp-2 text-sm leading-6 text-brand-dark/80">
                       {customer.details || 'ไม่มีรายละเอียดเพิ่มเติม'}
                     </p>
                   </td>
 
-                  <td className="px-4 py-2.5">
-                    <span className="px-2.5 py-1 bg-white border border-brand-border rounded-md text-[10px] font-bold text-brand-green tracking-wide whitespace-nowrap shadow-sm">
+                  <td className="px-4 py-3">
+                    <span className="whitespace-nowrap rounded-md border border-brand-border bg-white px-3 py-1.5 text-xs font-bold text-brand-green">
                       {getCategoryPath(customer.category_id)}
                     </span>
                   </td>
 
-                  <td className="px-4 py-2.5 text-[10px] text-brand-dark/60 font-medium tracking-wide whitespace-nowrap">
+                  <td className="px-4 py-3 text-sm font-medium text-brand-dark/65 whitespace-nowrap">
                     {customer.created_at?.toDate?.()?.toLocaleDateString?.()}
                   </td>
 
-                  <td className="px-4 py-2.5 text-center">
-                    <div className="flex items-center justify-center gap-2 shrink-0">
+                  <td className="px-4 py-3 text-center">
+                    <div className="flex shrink-0 items-center justify-center gap-2">
                       <button
                         onClick={() => setViewingCustomer(customer)}
-                        className="p-2 hover:bg-brand-gray text-brand-dark/40 hover:text-brand-dark rounded-md transition-colors opacity-0 group-hover:opacity-100"
-                        title="ดูโปรไฟล์"
+                        className="rounded-md p-2 text-brand-dark/50 transition-colors hover:bg-brand-gray hover:text-brand-dark"
+                        title="ดูข้อมูล"
                       >
                         <Eye size={16} />
                       </button>
                       <Link
                         href={`/dashboard/customers/${customer.id}`}
-                        className="p-2 hover:bg-brand-gray text-brand-dark/40 hover:text-brand-dark rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                        className="rounded-md p-2 text-brand-dark/50 transition-colors hover:bg-brand-gray hover:text-brand-dark"
                         title="แก้ไข"
                       >
                         <Edit2 size={16} />
                       </Link>
                       <button
                         onClick={() => handleDelete(customer.id)}
-                        className="p-2 hover:bg-red-500/10 text-brand-dark/40 hover:text-red-500 rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                        className="rounded-md p-2 text-brand-dark/50 transition-colors hover:bg-red-500/10 hover:text-red-600"
                         title="ลบ"
                       >
                         <Trash2 size={16} />
@@ -417,8 +466,8 @@ const CustomerTable = () => {
               ))
             ) : (
               <tr>
-                <td colSpan={6} className="px-6 py-12 text-center text-brand-dark/30 text-xs italic">
-                  ไม่พบประวัติรายชื่อลูกค้า
+                <td colSpan={6} className="px-6 py-14 text-center text-sm font-medium italic text-brand-dark/45">
+                  ไม่พบข้อมูลรายชื่อลูกค้า
                 </td>
               </tr>
             )}
@@ -426,150 +475,159 @@ const CustomerTable = () => {
         </table>
       </div>
 
-      <div className="p-4 border-t border-brand-gray flex items-center justify-between">
-        <span className="text-[10px] font-bold text-brand-dark/40 tracking-widest ml-2">
-          กำลังแสดง {filteredCustomers.length} รายการ
-        </span>
-        <div className="flex items-center gap-1">
-          <CorporateButton variant="outline" size="sm" className="px-3" disabled>
+      <div className="flex items-center justify-between border-t border-brand-border px-4 py-4">
+        <span className="ml-1 text-sm font-semibold text-brand-dark/55">กำลังแสดง {filteredCustomers.length} รายการ</span>
+        <div className="flex items-center gap-2">
+          <CorporateButton variant="outline" size="sm" className="px-3 text-sm font-semibold" disabled>
             ย้อนกลับ
           </CorporateButton>
-          <CorporateButton variant="outline" size="sm" className="px-3" disabled>
+          <CorporateButton variant="outline" size="sm" className="px-3 text-sm font-semibold" disabled>
             ถัดไป
           </CorporateButton>
         </div>
       </div>
 
       {viewingCustomer && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-brand-dark/60 backdrop-blur-md p-4">
-          <div className="w-full max-w-lg animate-in zoom-in duration-300">
-            <CorporateCard className="p-0 shadow-2xl relative overflow-hidden bg-brand-white">
-              <div className="h-32 bg-brand-dark relative">
-                <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#00DB33_1px,transparent_1px)] [background-size:16px_16px]"></div>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-brand-dark/60 p-3 backdrop-blur-sm sm:p-4">
+          <div className="w-full max-w-2xl animate-in zoom-in duration-300">
+            <CorporateCard className="relative flex max-h-[90vh] flex-col overflow-hidden bg-brand-white p-0 shadow-none">
+              <div className="relative shrink-0 border-b border-brand-border bg-brand-dark">
+                <div className="absolute inset-0 bg-[radial-gradient(#00DB33_1px,transparent_1px)] opacity-10 [background-size:16px_16px]"></div>
                 <button
                   onClick={() => setViewingCustomer(null)}
-                  className="absolute top-4 right-4 p-2 bg-brand-white/10 hover:bg-brand-white/20 text-brand-white rounded-md transition-colors backdrop-blur-sm"
+                  className="absolute right-3 top-3 z-10 rounded-md bg-brand-white/10 p-2 text-brand-white transition-colors hover:bg-brand-white/20"
                 >
-                  <X size={20} />
+                  <X size={18} />
                 </button>
-              </div>
 
-              <div className="px-8 pb-8 -mt-12 relative">
-                <div className="flex flex-col items-center">
-                  <div className="w-24 h-24 rounded-2xl bg-brand-green p-1 shadow-lg">
-                    <div className="w-full h-full rounded-xl bg-brand-white flex items-center justify-center text-4xl font-black text-brand-dark">
+                <div className="relative px-5 pb-5 pt-6 sm:px-7">
+                  <div className="flex flex-col items-center gap-3 pr-10 text-center sm:flex-row sm:items-end sm:text-left">
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border-4 border-white bg-brand-green text-2xl font-black text-brand-white">
                       {viewingCustomer.name.substring(0, 1)}
                     </div>
-                  </div>
-                  <h2 className="mt-4 text-2xl font-black text-brand-dark tracking-tight text-center">
-                    {viewingCustomer.name}
-                  </h2>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="px-2 py-0.5 bg-brand-green/10 text-brand-green text-[10px] font-bold rounded tracking-widest border border-brand-green/20">
-                      ลูกค้าในระบบ
-                    </span>
-                    <span className="text-[10px] text-brand-dark/40 font-bold uppercase tracking-widest font-mono">
-                      ID: {viewingCustomer.id.substring(0, 12)}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mt-10 space-y-6">
-                  <div className="flex items-start gap-4">
-                    <div className="p-2 bg-brand-gray rounded-lg text-brand-dark/60">
-                      <MapPin size={18} />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-[10px] font-bold text-brand-dark/40 tracking-widest mb-1">หมวดหมู่และแผนก</p>
-                      <p className="text-sm font-bold text-brand-dark">{getCategoryPath(viewingCustomer.category_id)}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-4">
-                    <div className="p-2 bg-brand-gray rounded-lg text-brand-dark/60">
-                      <User size={18} />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-[10px] font-bold text-brand-dark/40 tracking-widest mb-1">ชื่อผู้ติดต่อ</p>
-                      <p className="text-sm font-bold text-brand-dark">
-                        {viewingCustomer.contact_name || 'ไม่มีชื่อผู้ติดต่อ'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-4">
-                    <div className="p-2 bg-brand-gray rounded-lg text-brand-dark/60">
-                      <Phone size={18} />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-[10px] font-bold text-brand-dark/40 tracking-widest mb-1">เบอร์โทร</p>
-                      <p className="text-sm font-bold text-brand-dark">
-                        {viewingCustomer.phone ? formatPhoneDisplay(viewingCustomer.phone) : 'ไม่มีเบอร์หลัก'}
-                      </p>
-                      <p className="text-xs text-brand-dark/60 mt-1">
-                        เบอร์สำรอง: {viewingCustomer.backup_phone ? formatPhoneDisplay(viewingCustomer.backup_phone) : 'ไม่มีข้อมูล'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-4">
-                    <div className="p-2 bg-brand-gray rounded-lg text-brand-dark/60">
-                      <MapPin size={18} />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-[10px] font-bold text-brand-dark/40 tracking-widest mb-1">แผนที่ / สถานที่</p>
-                      <p className="text-sm font-bold text-brand-dark">
-                        {viewingCustomer.map_location || 'ไม่มีข้อมูลแผนที่'}
-                      </p>
-                      {viewingCustomer.map_link && (
-                        <a
-                          href={viewingCustomer.map_link}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 mt-2 text-xs font-bold text-brand-green hover:underline"
-                        >
-                          <ExternalLink size={12} />
-                          เปิดลิ้งแผนที่
-                        </a>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-4">
-                    <div className="p-2 bg-brand-gray rounded-lg text-brand-dark/60">
-                      <Info size={18} />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-[10px] font-bold text-brand-dark/40 tracking-widest mb-1">รายละเอียดและบันทึก</p>
-                      <p className="text-sm text-brand-dark/70 leading-relaxed italic border-l-4 border-brand-green/20 pl-4 py-2 bg-brand-gray/30 rounded-r-md min-h-[60px]">
-                        {viewingCustomer.details || 'ไม่มีการบันทึกข้อมูลเพิ่มเติมสำหรับรายชื่อนี้'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 pt-4 mt-8 border-t border-brand-gray">
-                    <div className="flex items-center gap-2">
-                      <Calendar size={14} className="text-brand-dark/30" />
-                      <div className="text-[9px]">
-                        <p className="text-brand-dark/40 font-bold tracking-widest">วันที่ลงทะเบียน</p>
-                        <p className="font-bold text-brand-dark">{viewingCustomer.created_at?.toDate?.()?.toLocaleDateString?.()}</p>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xl font-black tracking-tight text-white sm:text-xl">
+                        {viewingCustomer.name}
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <User size={14} className="text-brand-dark/30" />
-                      <div className="text-[9px]">
-                        <p className="text-brand-dark/40 font-bold tracking-widest">ผู้รับผิดชอบ</p>
-                        <p className="font-bold text-brand-dark">{viewingCustomer.handled_by_uid?.substring?.(0, 8) || '-'}</p>
+                      <div className="mt-2 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+                        <span className="rounded border border-brand-green/20 bg-brand-green/10 px-2.5 py-1 text-xs font-bold text-green-100">
+                          ลูกค้าในระบบ
+                        </span>
+                        <span className="font-mono text-xs font-semibold text-white/65">
+                          ID: {viewingCustomer.id.substring(0, 12)}
+                        </span>
                       </div>
                     </div>
                   </div>
                 </div>
+              </div>
 
-                <div className="mt-8 flex gap-3">
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-brand-border bg-slate-50/70 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-lg bg-white p-2 text-brand-dark/60">
+                        <MapPin size={18} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="mb-1 text-xs font-bold text-brand-dark/45">หมวดหมู่</p>
+                        <p className="text-base font-bold leading-6 text-brand-dark">{getCategoryPath(viewingCustomer.category_id)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-brand-border bg-slate-50/70 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-lg bg-white p-2 text-brand-dark/60">
+                        <User size={18} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="mb-1 text-xs font-bold text-brand-dark/45">ชื่อผู้ติดต่อ</p>
+                        <p className="text-base font-bold leading-6 text-brand-dark">
+                          {viewingCustomer.contact_name || 'ไม่มีชื่อผู้ติดต่อ'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-brand-border bg-slate-50/70 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-lg bg-white p-2 text-brand-dark/60">
+                        <Phone size={18} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="mb-1 text-xs font-bold text-brand-dark/45">เบอร์โทร</p>
+                        <p className="text-base font-bold text-brand-dark">
+                          {viewingCustomer.phone ? formatPhoneDisplay(viewingCustomer.phone) : 'ไม่มีเบอร์หลัก'}
+                        </p>
+                        <p className="mt-1 text-sm text-brand-dark/65">
+                          เบอร์สำรอง: {viewingCustomer.backup_phone ? formatPhoneDisplay(viewingCustomer.backup_phone) : 'ไม่มีข้อมูล'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-brand-border bg-slate-50/70 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-lg bg-white p-2 text-brand-dark/60">
+                        <MapPin size={18} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="mb-1 text-xs font-bold text-brand-dark/45">แผนที่ / สถานที่</p>
+                        <p className="text-base font-bold leading-6 text-brand-dark">
+                          {viewingCustomer.map_location || 'ไม่มีข้อมูลแผนที่'}
+                        </p>
+                        {viewingCustomer.map_link && (
+                          <a
+                            href={viewingCustomer.map_link}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-2 inline-flex items-center gap-1 text-sm font-bold text-brand-green hover:underline"
+                          >
+                            <ExternalLink size={13} />
+                            เปิดลิงก์แผนที่
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-brand-border bg-slate-50/70 p-4 sm:col-span-2">
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-lg bg-white p-2 text-brand-dark/60">
+                        <Info size={18} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="mb-2 text-xs font-bold text-brand-dark/45">รายละเอียดและบันทึก</p>
+                        <p className="rounded-lg border-l-4 border-brand-green/20 bg-white px-4 py-3 text-sm leading-7 text-brand-dark/80">
+                          {viewingCustomer.details || 'ไม่มีบันทึกเพิ่มเติมสำหรับลูกค้ารายนี้'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-brand-border bg-slate-50/70 p-4 sm:col-span-2">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg bg-white p-2 text-brand-dark/60">
+                        <Calendar size={18} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-brand-dark/45">วันที่ลงทะเบียน</p>
+                        <p className="mt-1 text-sm font-bold text-brand-dark">
+                          {viewingCustomer.created_at?.toDate?.()?.toLocaleDateString?.()}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="shrink-0 border-t border-brand-border bg-white px-5 py-4 sm:px-7">
+                <div className="flex flex-col gap-3 sm:flex-row">
                   <CorporateButton
                     variant="outline"
                     fullWidth
-                    className="gap-2"
+                    className="gap-2 text-sm font-semibold"
                     onClick={() => {
                       router.push(`/dashboard/customers/${viewingCustomer.id}`);
                       setViewingCustomer(null);
@@ -583,11 +641,19 @@ const CustomerTable = () => {
                       href={viewingCustomer.map_link}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex h-11 px-6 items-center justify-center rounded-md bg-brand-green text-brand-white text-xs font-medium uppercase tracking-wide hover:opacity-90"
+                      className="inline-flex h-11 items-center justify-center rounded-md bg-brand-green px-6 text-sm font-semibold text-brand-white hover:opacity-90 sm:min-w-[150px]"
                     >
                       เปิดแผนที่
                     </a>
                   )}
+
+                  <CorporateButton
+                    variant="secondary"
+                    className="text-sm font-semibold sm:min-w-[120px]"
+                    onClick={() => setViewingCustomer(null)}
+                  >
+                    ปิด
+                  </CorporateButton>
                 </div>
               </div>
             </CorporateCard>

@@ -36,7 +36,7 @@ const Sidebar = () => {
         </div>
       </div>
 
-      <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto mt-2">
+      <nav className="flex-1 px-3 space-y-5 overflow-y-auto mt-2">
         <div className="px-3 mb-3">
           <span className="text-[11px] font-black tracking-widest text-brand-dark/50">เมนูหลัก</span>
         </div>
@@ -55,7 +55,7 @@ const Sidebar = () => {
                   : 'text-brand-dark/70 hover:bg-brand-gray hover:text-brand-dark'
               )}
             >
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-4">
                 <Icon size={16} className={cn(isActive ? 'text-brand-green' : 'text-brand-dark/50 group-hover:text-brand-dark')} />
                 <span className={cn('text-[13px] font-black tracking-wide', isActive ? 'opacity-100' : 'opacity-90')}>
                   {item.label}

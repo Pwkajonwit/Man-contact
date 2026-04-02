@@ -1,8 +1,21 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, onSnapshot, getCountFromServer, orderBy } from 'firebase/firestore';
-import { ArrowLeft, Phone, MapPin, User, Search, X, Loader2, Plus, Edit2, ExternalLink, Briefcase, Share2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
+import {
+  ArrowLeft,
+  Briefcase,
+  Edit2,
+  ExternalLink,
+  Loader2,
+  MapPin,
+  Phone,
+  Plus,
+  Search,
+  Share2,
+  User,
+  X,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { db } from '@/lib/firebase/config';
@@ -26,21 +39,22 @@ const getPrimaryPhoneDisplay = (customer: CustomerRecord) => {
 
 const getSummaryDetail = (customer: CustomerRecord) => customer.details || customer.map_location || 'ไม่มีรายละเอียด';
 
-const buildCustomerShareText = (customer: CustomerRecord) => {
-  return [
+const buildCustomerShareText = (customer: CustomerRecord) =>
+  [
     `ชื่อลูกค้า: ${customer.name || '-'}`,
     `ชื่อผู้ติดต่อ: ${customer.contact_name || '-'}`,
     `เบอร์หลัก: ${customer.phone ? formatPhoneDisplay(customer.phone) : '-'}`,
     `เบอร์สำรอง: ${customer.backup_phone ? formatPhoneDisplay(customer.backup_phone) : '-'}`,
     `แผนที่ / สถานที่: ${customer.map_location || '-'}`,
-    `ลิ้งแผนที่: ${customer.map_link || '-'}`,
+    `ลิงก์แผนที่: ${customer.map_link || '-'}`,
     `รายละเอียดและบันทึก: ${customer.details || '-'}`,
   ].join('\n');
-};
 
 const EmployeeHomePage = () => {
   const router = useRouter();
   const [currentPath, setCurrentPath] = useState<Category[]>([]);
+  const [allCategories, setAllCategories] = useState<Category[]>([]);
+  const [allCustomers, setAllCustomers] = useState<CustomerRecord[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,97 +65,108 @@ const EmployeeHomePage = () => {
 
   const currentParentId = currentPath.length > 0 ? currentPath[currentPath.length - 1].id : null;
 
-  const getAllChildIds = async (parentId: string): Promise<string[]> => {
-    let ids = [parentId];
-    const categoryQuery = query(collection(db, 'categories'), where('parent_id', '==', parentId));
-    const snapshot = await getDocs(categoryQuery);
-    const childIds = await Promise.all(snapshot.docs.map((docSnapshot) => getAllChildIds(docSnapshot.id)));
-    return ids.concat(childIds.flat());
-  };
+  useEffect(() => {
+    let loadedCategories = false;
+    let loadedCustomers = false;
+
+    const stopLoadingIfReady = () => {
+      if (loadedCategories && loadedCustomers) {
+        setLoading(false);
+      }
+    };
+
+    const unsubscribeCategories = onSnapshot(collection(db, 'categories'), (snapshot) => {
+      const nextCategories = snapshot.docs.map(
+        (docSnapshot) => ({ id: docSnapshot.id, ...docSnapshot.data() } as Category)
+      );
+      setAllCategories(nextCategories);
+      loadedCategories = true;
+      stopLoadingIfReady();
+    });
+
+    const unsubscribeCustomers = onSnapshot(
+      query(collection(db, 'customers'), orderBy('name', 'asc')),
+      (snapshot) => {
+        const nextCustomers = snapshot.docs.map(
+          (docSnapshot) => ({ id: docSnapshot.id, ...docSnapshot.data() } as CustomerRecord)
+        );
+        setAllCustomers(nextCustomers);
+        loadedCustomers = true;
+        stopLoadingIfReady();
+      }
+    );
+
+    return () => {
+      unsubscribeCategories();
+      unsubscribeCustomers();
+    };
+  }, []);
 
   useEffect(() => {
-    if (searchQuery.trim() === '') {
-      setLoading(true);
-      const categoryQuery = query(collection(db, 'categories'), where('parent_id', '==', currentParentId));
+    if (loading) return;
 
-      const unsubscribeCats = onSnapshot(categoryQuery, async (snapshot) => {
-        const categoryList = snapshot.docs.map((docSnapshot) => ({ id: docSnapshot.id, ...docSnapshot.data() } as Category));
-
-        const categoriesWithMetadata = await Promise.all(
-          categoryList.map(async (category) => {
-            const subQuery = query(collection(db, 'categories'), where('parent_id', '==', category.id));
-            const subSnapshot = await getDocs(subQuery);
-            const subNames = subSnapshot.docs.map((docSnapshot) => docSnapshot.data().name).slice(0, 3).join(', ');
-
-            const relatedCategoryIds = await getAllChildIds(category.id);
-            const customerQuery = query(collection(db, 'customers'), where('category_id', 'in', relatedCategoryIds));
-            const countSnapshot = await getCountFromServer(customerQuery);
-
-            return {
-              ...category,
-              subNames: subNames ? `${subNames}...` : 'Direct Records',
-              totalCustomers: countSnapshot.data().count,
-            };
-          })
-        );
-
-        setCategories(categoriesWithMetadata);
-
-        if (categoryList.length === 0 && currentParentId) {
-          fetchCustomers(currentParentId);
-        } else {
-          setCustomers([]);
-          setLoading(false);
-        }
-      });
-
-      return () => unsubscribeCats();
-    }
-
-    const timer = setTimeout(() => {
-      searchGlobal(searchQuery);
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [currentParentId, searchQuery]);
-
-  const searchGlobal = async (term: string) => {
-    setLoading(true);
-    const customerQuery = query(collection(db, 'customers'), orderBy('name', 'asc'));
-    const snapshot = await getDocs(customerQuery);
-    const allCustomers = snapshot.docs.map((docSnapshot) => ({ id: docSnapshot.id, ...docSnapshot.data() } as CustomerRecord));
-    const normalizedTerm = term.toLowerCase();
-    const normalizedPhoneTerm = normalizePhone(term);
-
-    const filtered = allCustomers.filter(
-      (customer) => {
+    if (searchQuery.trim() !== '') {
+      const normalizedTerm = searchQuery.trim().toLowerCase();
+      const normalizedPhoneTerm = normalizePhone(searchQuery);
+      const filtered = allCustomers.filter((customer) => {
         const matchesPhone =
           normalizedPhoneTerm.length > 0 &&
           (normalizePhone(customer.phone).includes(normalizedPhoneTerm) ||
             normalizePhone(customer.backup_phone).includes(normalizedPhoneTerm));
 
         return (
-        customer.name.toLowerCase().includes(normalizedTerm) ||
-        customer.contact_name.toLowerCase().includes(normalizedTerm) ||
-        matchesPhone ||
-        customer.map_location.toLowerCase().includes(normalizedTerm) ||
-        customer.map_link.toLowerCase().includes(normalizedTerm) ||
-        customer.details.toLowerCase().includes(normalizedTerm)
+          customer.name.toLowerCase().includes(normalizedTerm) ||
+          customer.contact_name.toLowerCase().includes(normalizedTerm) ||
+          matchesPhone ||
+          customer.map_location.toLowerCase().includes(normalizedTerm) ||
+          customer.map_link.toLowerCase().includes(normalizedTerm) ||
+          customer.details.toLowerCase().includes(normalizedTerm)
         );
-      }
-    );
+      });
 
-    setSearchResults(filtered);
-    setLoading(false);
-  };
+      setSearchResults(filtered);
+      setCategories([]);
+      setCustomers([]);
+      return;
+    }
 
-  const fetchCustomers = async (categoryId: string) => {
-    const customerQuery = query(collection(db, 'customers'), where('category_id', '==', categoryId));
-    const snapshot = await getDocs(customerQuery);
-    const customerList = snapshot.docs.map((docSnapshot) => ({ id: docSnapshot.id, ...docSnapshot.data() } as CustomerRecord));
-    setCustomers(customerList);
-    setLoading(false);
-  };
+    const childCategories = allCategories.filter((category) => category.parent_id === currentParentId);
+
+    const getDescendantIds = (parentId: string): string[] => {
+      const directChildren = allCategories.filter((category) => category.parent_id === parentId);
+      return [parentId, ...directChildren.flatMap((childCategory) => getDescendantIds(childCategory.id))];
+    };
+
+    const categoriesWithMetadata = childCategories.map((category) => {
+      const subCategories = allCategories.filter((item) => item.parent_id === category.id);
+      const relatedCategoryIds = getDescendantIds(category.id);
+      const totalCustomers = allCustomers.filter((customer) =>
+        relatedCategoryIds.includes(customer.category_id)
+      ).length;
+
+      return {
+        ...category,
+        subNames:
+          subCategories.length > 0
+            ? `${subCategories.slice(0, 3).map((item) => item.name).join(', ')}${subCategories.length > 3 ? '...' : ''}`
+            : 'Direct Records',
+        totalCustomers,
+      };
+    });
+
+    setCategories(categoriesWithMetadata);
+    setSearchResults([]);
+
+    if (categoriesWithMetadata.length === 0 && currentParentId) {
+      setCustomers(allCustomers.filter((customer) => customer.category_id === currentParentId));
+    } else {
+      setCustomers([]);
+    }
+  }, [allCategories, allCustomers, currentParentId, loading, searchQuery]);
+
+  useEffect(() => {
+    setShareStatus('');
+  }, [selectedCustomer]);
 
   const handleBack = () => {
     setCurrentPath((previous) => previous.slice(0, -1));
@@ -150,10 +175,6 @@ const EmployeeHomePage = () => {
   const handleCategoryClick = (category: Category) => {
     setCurrentPath((previous) => [...previous, category]);
   };
-
-  useEffect(() => {
-    setShareStatus('');
-  }, [selectedCustomer]);
 
   const handleShare = async (customer: CustomerRecord) => {
     const shareText = buildCustomerShareText(customer);
@@ -186,16 +207,19 @@ const EmployeeHomePage = () => {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#F5F7F9]">
-      <div className="bg-gradient-to-r from-brand-green-light to-brand-green pt-6 pb-4 px-5 rounded-b-[1.5rem] shadow-md sticky top-0 z-[100] border-b border-brand-green/20">
-        <div className="flex items-center justify-between mb-4 px-1">
+    <div className="flex min-h-screen flex-col bg-[#F5F7F9]">
+      <div className="sticky top-0 z-[100] rounded-b-[1.5rem] border-b border-[#a1d969] bg-gradient-to-r from-[#a1d969] via-[#aee970] to-[#7dbe5c] px-5 pb-4 pt-6 shadow-sm">
+        <div className="mb-4 flex items-center justify-between px-1">
           <div className="flex items-center gap-3">
             {currentPath.length > 0 && searchQuery === '' && (
-              <button onClick={handleBack} className="bg-white/20 p-1.5 rounded-lg text-white backdrop-blur-md active:scale-90 transition-transform shadow-sm">
+              <button
+                onClick={handleBack}
+                className="rounded-lg border border-white/40 bg-white/45 p-1.5 text-[#476236] backdrop-blur-md transition-transform active:scale-90"
+              >
                 <ArrowLeft size={16} strokeWidth={3} />
               </button>
             )}
-            <h1 className="text-white font-bold tracking-tight text-xl leading-none">
+            <h1 className="text-xl font-bold leading-none tracking-tight text-[#29411E]">
               {searchQuery !== ''
                 ? 'ผลการค้นหา'
                 : currentPath.length > 0
@@ -203,29 +227,32 @@ const EmployeeHomePage = () => {
                   : 'รายชื่อผู้ติดต่อ'}
             </h1>
           </div>
-          <div className="w-8 h-8 rounded-lg bg-white/10 backdrop-blur-md flex items-center justify-center text-white/50 border border-white/20 shadow-sm">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/35 bg-white/35 text-[#5A7750] backdrop-blur-md">
             <User size={16} strokeWidth={2.5} />
           </div>
         </div>
 
-        <div className="bg-white shadow-[0_4px_20px_-6px_rgba(0,0,0,0.15)] px-4 py-3 rounded-2xl flex items-center gap-3 border border-brand-border/60">
-          <Search size={18} className="text-brand-dark/50" strokeWidth={2.5} />
+        <div className="flex items-center gap-3 rounded-2xl border border-white/50 bg-white/80 px-4 py-3 shadow-[0_4px_18px_-10px_rgba(0,0,0,0.18)] backdrop-blur-md">
+          <Search size={18} className="text-brand-dark/45" strokeWidth={2.5} />
           <input
             type="text"
-            placeholder="ค้นหาชื่อ, ผู้ติดต่อ, เบอร์, แผนที่..."
+            placeholder="ค้นหาชื่อ ผู้ติดต่อ เบอร์ หรือแผนที่"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="bg-transparent border-none focus:ring-0 p-0 text-base font-bold flex-1 text-brand-dark placeholder-brand-dark/40"
+            className="flex-1 border-none bg-transparent p-0 text-base font-semibold text-brand-dark placeholder:text-brand-dark/40 focus:ring-0"
           />
           {searchQuery !== '' && (
-            <button onClick={() => setSearchQuery('')} className="bg-brand-gray border border-brand-border p-1 rounded-md text-brand-dark/60">
+            <button
+              onClick={() => setSearchQuery('')}
+              className="rounded-md border border-brand-border bg-brand-gray p-1 text-brand-dark/60"
+            >
               <X size={14} strokeWidth={3} />
             </button>
           )}
         </div>
       </div>
 
-      <div className={cn('px-5 space-y-2 pb-10 transition-all', searchQuery !== '' ? 'mt-6' : 'mt-4')}>
+      <div className={cn('space-y-2 px-5 pb-10 transition-all', searchQuery !== '' ? 'mt-6' : 'mt-4')}>
         {loading ? (
           <div className="flex justify-center py-20">
             <Loader2 className="animate-spin text-[#7DBE5C]" size={28} />
@@ -233,9 +260,11 @@ const EmployeeHomePage = () => {
         ) : (
           <>
             {searchQuery !== '' ? (
-              <div className="bg-white rounded-xl shadow-sm border border-[#EDF2F7] overflow-hidden">
-                <div className="bg-[#EDF2F7]/50 px-4 py-2 border-b border-brand-green/5">
-                  <span className="text-[10px] font-black text-[#7DBE5C] tracking-wide">พบ {searchResults.length} รายการ</span>
+              <div className="overflow-hidden rounded-xl border border-[#EDF2F7] bg-white shadow-sm">
+                <div className="border-b border-brand-green/5 bg-[#EDF2F7]/50 px-4 py-2">
+                  <span className="text-[10px] font-black tracking-wide text-[#7DBE5C]">
+                    พบ {searchResults.length} รายการ
+                  </span>
                 </div>
 
                 {searchResults.length > 0 ? (
@@ -249,33 +278,33 @@ const EmployeeHomePage = () => {
                         key={customer.id}
                         onClick={() => setSelectedCustomer(customer)}
                         className={cn(
-                          'p-4 flex items-center justify-between hover:bg-slate-50 cursor-pointer active:bg-slate-100',
+                          'flex cursor-pointer items-center justify-between p-4 hover:bg-slate-50 active:bg-slate-100',
                           index !== searchResults.length - 1 && 'border-b border-slate-50'
                         )}
                       >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-9 h-9 rounded-lg bg-[#F7FAFC] flex items-center justify-center text-[#7DBE5C] font-black text-lg border border-slate-50">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-50 bg-[#F7FAFC] text-lg font-black text-[#7DBE5C]">
                             {customer.name.substring(0, 1)}
                           </div>
                           <div className="min-w-0">
-                            <h4 className="font-bold text-[#2D3748] text-sm truncate">{customer.name}</h4>
-                            <p className="text-[10px] text-[#718096] font-bold tracking-wide mt-0.5 truncate">
+                            <h4 className="truncate text-sm font-bold text-[#2D3748]">{customer.name}</h4>
+                            <p className="mt-0.5 truncate text-[10px] font-bold tracking-wide text-[#718096]">
                               {getPrimaryPhoneDisplay(customer) || 'ไม่มีข้อมูลเบอร์โทร'}
                             </p>
-                            <p className="text-[9px] text-[#A0AEC0] font-medium mt-0.5 truncate">
+                            <p className="mt-0.5 truncate text-[9px] font-medium text-[#A0AEC0]">
                               {getSummaryDetail(customer)}
                             </p>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex shrink-0 items-center gap-2">
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleShare(customer);
                             }}
-                            className="bg-slate-50 p-2 rounded-lg text-slate-400 active:text-[#7DBE5C] border border-slate-100"
+                            className="rounded-lg border border-slate-100 bg-slate-50 p-2 text-slate-400 active:text-[#7DBE5C]"
                             aria-label="แชร์"
                           >
                             <Share2 size={16} />
@@ -286,7 +315,7 @@ const EmployeeHomePage = () => {
                               target="_blank"
                               rel="noreferrer"
                               onClick={(e) => e.stopPropagation()}
-                              className="bg-slate-50 p-2 rounded-lg text-slate-400 active:text-[#7DBE5C] border border-slate-100"
+                              className="rounded-lg border border-slate-100 bg-slate-50 p-2 text-slate-400 active:text-[#7DBE5C]"
                               aria-label="เปิดแผนที่"
                             >
                               <MapPin size={16} />
@@ -296,7 +325,7 @@ const EmployeeHomePage = () => {
                             <a
                               href={`tel:${primaryPhone}`}
                               onClick={(e) => e.stopPropagation()}
-                              className="bg-slate-50 p-2 rounded-lg text-slate-400 active:text-[#7DBE5C] border border-slate-100"
+                              className="rounded-lg border border-slate-100 bg-slate-50 p-2 text-slate-400 active:text-[#7DBE5C]"
                               aria-label="โทร"
                             >
                               <Phone size={16} />
@@ -307,7 +336,9 @@ const EmployeeHomePage = () => {
                     );
                   })
                 ) : (
-                  <div className="p-10 text-center text-slate-400 font-bold text-sm">ไม่พบรายชื่อที่ตรงกับ "{searchQuery}"</div>
+                  <div className="p-10 text-center text-sm font-bold text-slate-400">
+                    ไม่พบรายชื่อที่ตรงกับ "{searchQuery}"
+                  </div>
                 )}
               </div>
             ) : (
@@ -316,89 +347,89 @@ const EmployeeHomePage = () => {
                   <button
                     key={category.id}
                     onClick={() => handleCategoryClick(category)}
-                    className="w-full bg-white shadow-sm rounded-xl p-4 flex items-center justify-between border border-brand-border hover:bg-brand-gray border-l-4 border-l-brand-green active:scale-[0.98] transition-all group"
+                    className="group flex w-full items-center justify-between rounded-xl border border-brand-border border-l-4 border-l-brand-green bg-white p-4 shadow-sm transition-all hover:bg-brand-gray active:scale-[0.98]"
                   >
-                    <div className="text-left min-w-0">
-                      <h3 className="font-bold text-brand-dark text-base leading-none mb-1 truncate">{category.name}</h3>
-                      <p className="text-[10px] text-brand-dark/60 font-medium truncate max-w-[180px]">{category.subNames}</p>
+                    <div className="min-w-0 text-left">
+                      <h3 className="mb-1 truncate text-base font-bold leading-none text-brand-dark">{category.name}</h3>
+                      <p className="max-w-[180px] truncate text-[10px] font-medium text-brand-dark/60">
+                        {category.subNames}
+                      </p>
                     </div>
-                    <div className="bg-brand-gray px-3 py-1 rounded-lg text-[10px] font-bold text-brand-green border border-brand-border">
+                    <div className="rounded-lg border border-brand-border bg-brand-gray px-3 py-1 text-[10px] font-bold text-brand-green">
                       {category.totalCustomers || 0} รายชื่อ
                     </div>
                   </button>
                 ))}
 
                 {customers.length > 0 && (
-                  <div className="bg-white rounded-xl shadow-sm border border-brand-border overflow-hidden mt-4">
-                    {customers.map((customer, index) => (
-                      (() => {
-                        const primaryPhone = getPrimaryPhone(customer);
-                        const canCall = Boolean(primaryPhone);
-                        const canOpenMap = Boolean(customer.map_link);
+                  <div className="mt-4 overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm">
+                    {customers.map((customer, index) => {
+                      const primaryPhone = getPrimaryPhone(customer);
+                      const canCall = Boolean(primaryPhone);
+                      const canOpenMap = Boolean(customer.map_link);
 
-                        return (
-                          <div
-                            key={customer.id}
-                            onClick={() => setSelectedCustomer(customer)}
-                            className={cn(
-                              'p-4 flex items-center justify-between gap-3 hover:bg-brand-gray cursor-pointer active:bg-brand-border/30',
-                              index !== customers.length - 1 && 'border-b border-brand-border'
-                            )}
-                          >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-9 h-9 rounded-lg bg-brand-green/10 flex items-center justify-center text-brand-green font-bold text-lg border border-brand-green/20">
-                                {customer.name.substring(0, 1)}
-                              </div>
-                              <div className="min-w-0">
-                                <h4 className="font-bold text-brand-dark text-sm truncate">{customer.name}</h4>
-                                <p className="text-[10px] text-brand-dark/60 font-bold tracking-tight mt-0.5 truncate">
-                                  {getPrimaryPhoneDisplay(customer) || 'ไม่มีข้อมูลเบอร์โทร'}
-                                </p>
-                                <p className="text-[9px] text-brand-dark/45 mt-0.5 truncate">
-                                  {getSummaryDetail(customer)}
-                                </p>
-                              </div>
+                      return (
+                        <div
+                          key={customer.id}
+                          onClick={() => setSelectedCustomer(customer)}
+                          className={cn(
+                            'flex cursor-pointer items-center justify-between gap-3 p-4 hover:bg-brand-gray active:bg-brand-border/30',
+                            index !== customers.length - 1 && 'border-b border-brand-border'
+                          )}
+                        >
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-brand-green/20 bg-brand-green/10 text-lg font-bold text-brand-green">
+                              {customer.name.substring(0, 1)}
                             </div>
-
-                            <div className="flex items-center gap-2 shrink-0">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleShare(customer);
-                                }}
-                                className="bg-brand-gray hover:bg-[#E2E8F0] p-2 rounded-lg text-brand-dark/50 hover:text-brand-green border border-brand-border/50 transition-colors"
-                                aria-label="แชร์"
-                              >
-                                <Share2 size={15} />
-                              </button>
-                              {canOpenMap && (
-                                <a
-                                  href={customer.map_link}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="bg-brand-gray hover:bg-[#E2E8F0] p-2 rounded-lg text-brand-dark/50 hover:text-brand-green border border-brand-border/50 transition-colors"
-                                  aria-label="เปิดแผนที่"
-                                >
-                                  <MapPin size={15} />
-                                </a>
-                              )}
-                              {canCall && (
-                                <a
-                                  href={`tel:${primaryPhone}`}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="bg-brand-gray hover:bg-[#E2E8F0] p-2 rounded-lg text-brand-dark/50 hover:text-brand-green border border-brand-border/50 transition-colors"
-                                  aria-label="โทร"
-                                >
-                                  <Phone size={15} />
-                                </a>
-                              )}
+                            <div className="min-w-0">
+                              <h4 className="truncate text-sm font-bold text-brand-dark">{customer.name}</h4>
+                              <p className="mt-0.5 truncate text-[10px] font-bold tracking-tight text-brand-dark/60">
+                                {getPrimaryPhoneDisplay(customer) || 'ไม่มีข้อมูลเบอร์โทร'}
+                              </p>
+                              <p className="mt-0.5 truncate text-[9px] text-brand-dark/45">
+                                {getSummaryDetail(customer)}
+                              </p>
                             </div>
                           </div>
-                        );
-                      })()
-                    ))}
+
+                          <div className="flex shrink-0 items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleShare(customer);
+                              }}
+                              className="rounded-lg border border-brand-border/50 bg-brand-gray p-2 text-brand-dark/50 transition-colors hover:bg-[#E2E8F0] hover:text-brand-green"
+                              aria-label="แชร์"
+                            >
+                              <Share2 size={15} />
+                            </button>
+                            {canOpenMap && (
+                              <a
+                                href={customer.map_link}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="rounded-lg border border-brand-border/50 bg-brand-gray p-2 text-brand-dark/50 transition-colors hover:bg-[#E2E8F0] hover:text-brand-green"
+                                aria-label="เปิดแผนที่"
+                              >
+                                <MapPin size={15} />
+                              </a>
+                            )}
+                            {canCall && (
+                              <a
+                                href={`tel:${primaryPhone}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="rounded-lg border border-brand-border/50 bg-brand-gray p-2 text-brand-dark/50 transition-colors hover:bg-[#E2E8F0] hover:text-brand-green"
+                                aria-label="โทร"
+                              >
+                                <Phone size={15} />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </>
@@ -408,76 +439,82 @@ const EmployeeHomePage = () => {
       </div>
 
       {selectedCustomer && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-brand-dark/40 backdrop-blur-sm p-5 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-sm rounded-[1.5rem] shadow-2xl p-6 relative animate-in zoom-in duration-300 border border-brand-border">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-brand-dark/40 p-5 backdrop-blur-sm">
+          <div className="relative w-full max-w-sm rounded-[1.5rem] border border-brand-border bg-white p-6 shadow-2xl">
             <button
               onClick={() => router.push(`/home/edit/${selectedCustomer.id}`)}
-              className="absolute top-5 left-5 p-1.5 bg-brand-gray rounded-lg text-brand-dark/40 hover:text-brand-dark transition-colors border border-brand-border shadow-sm"
+              className="absolute left-5 top-5 rounded-lg border border-brand-border bg-brand-gray p-1.5 text-brand-dark/40 shadow-sm transition-colors hover:text-brand-dark"
             >
               <Edit2 size={18} />
             </button>
             <button
               onClick={() => setSelectedCustomer(null)}
-              className="absolute top-5 right-5 p-1.5 bg-brand-gray rounded-lg text-brand-dark/40 hover:text-brand-dark transition-colors border border-brand-border shadow-sm"
+              className="absolute right-5 top-5 rounded-lg border border-brand-border bg-brand-gray p-1.5 text-brand-dark/40 shadow-sm transition-colors hover:text-brand-dark"
             >
               <X size={18} />
             </button>
 
-            <div className="flex flex-col items-center mb-6">
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-brand-green-light to-brand-green p-1 shadow-lg mb-3">
-                <div className="w-full h-full bg-white rounded-xl flex items-center justify-center text-3xl font-black text-brand-green">
+            <div className="mb-6 flex flex-col items-center">
+              <div className="mb-3 h-20 w-20 rounded-2xl bg-gradient-to-br from-brand-green-light to-brand-green p-1 shadow-lg">
+                <div className="flex h-full w-full items-center justify-center rounded-xl bg-white text-3xl font-black text-brand-green">
                   {selectedCustomer.name.substring(0, 1)}
                 </div>
               </div>
-              <h2 className="text-xl font-black text-brand-dark tracking-tight leading-none text-center">{selectedCustomer.name}</h2>
-              <span className="text-[10px] font-bold text-brand-green bg-brand-green/10 border border-brand-green/20 px-3 py-0.5 rounded-full tracking-wide mt-3 shadow-sm">
+              <h2 className="text-center text-xl font-black leading-none tracking-tight text-brand-dark">
+                {selectedCustomer.name}
+              </h2>
+              <span className="mt-3 rounded-full border border-brand-green/20 bg-brand-green/10 px-3 py-0.5 text-[10px] font-bold tracking-wide text-brand-green shadow-sm">
                 ข้อมูลในระบบยืนยันแล้ว
               </span>
             </div>
 
             <div className="space-y-2.5">
-              <div className="flex gap-3 p-3 bg-brand-gray rounded-xl border border-brand-border shadow-sm">
-                <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-brand-green shadow-sm border border-brand-border/30">
+              <div className="flex gap-3 rounded-xl border border-brand-border bg-brand-gray p-3 shadow-sm">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-brand-border/30 bg-white text-brand-green shadow-sm">
                   <User size={16} />
                 </div>
                 <div>
-                  <p className="text-[9px] font-bold text-brand-dark/50 tracking-wide">ชื่อผู้ติดต่อ</p>
-                  <p className="text-xs font-bold text-brand-dark mt-0.5">{selectedCustomer.contact_name || 'ไม่ระบุข้อมูล'}</p>
+                  <p className="text-[9px] font-bold tracking-wide text-brand-dark/50">ชื่อผู้ติดต่อ</p>
+                  <p className="mt-0.5 text-xs font-bold text-brand-dark">
+                    {selectedCustomer.contact_name || 'ไม่ระบุข้อมูล'}
+                  </p>
                 </div>
               </div>
 
-              <div className="flex gap-3 p-3 bg-brand-gray rounded-xl border border-brand-border shadow-sm">
-                <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-brand-green shadow-sm border border-brand-border/30">
+              <div className="flex gap-3 rounded-xl border border-brand-border bg-brand-gray p-3 shadow-sm">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-brand-border/30 bg-white text-brand-green shadow-sm">
                   <Briefcase size={16} />
                 </div>
                 <div>
-                  <p className="text-[9px] font-bold text-brand-dark/50 tracking-wide">รายละเอียด / หมายเหตุ</p>
-                  <p className="text-xs font-bold text-brand-dark mt-0.5">{selectedCustomer.details || 'ไม่ระบุข้อมูล'}</p>
+                  <p className="text-[9px] font-bold tracking-wide text-brand-dark/50">รายละเอียด / หมายเหตุ</p>
+                  <p className="mt-0.5 text-xs font-bold text-brand-dark">
+                    {selectedCustomer.details || 'ไม่ระบุข้อมูล'}
+                  </p>
                 </div>
               </div>
 
-              <div className="flex gap-3 p-3 bg-brand-gray rounded-xl border border-brand-border shadow-sm">
-                <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-brand-green shadow-sm border border-brand-border/30">
+              <div className="flex gap-3 rounded-xl border border-brand-border bg-brand-gray p-3 shadow-sm">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-brand-border/30 bg-white text-brand-green shadow-sm">
                   <Phone size={16} />
                 </div>
                 <div>
-                  <p className="text-[9px] font-bold text-brand-dark/50 tracking-wide">เบอร์โทร</p>
-                  <p className="text-xs font-bold text-brand-dark mt-0.5">
+                  <p className="text-[9px] font-bold tracking-wide text-brand-dark/50">เบอร์โทร</p>
+                  <p className="mt-0.5 text-xs font-bold text-brand-dark">
                     {selectedCustomer.phone ? formatPhoneDisplay(selectedCustomer.phone) : 'ไม่มีเบอร์หลัก'}
                   </p>
-                  <p className="text-[11px] text-brand-dark/60 mt-1">
+                  <p className="mt-1 text-[11px] text-brand-dark/60">
                     เบอร์สำรอง: {selectedCustomer.backup_phone ? formatPhoneDisplay(selectedCustomer.backup_phone) : 'ไม่มีข้อมูล'}
                   </p>
                 </div>
               </div>
 
-              <div className="flex gap-3 p-3 bg-brand-gray rounded-xl border border-brand-border shadow-sm">
-                <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-brand-green shadow-sm border border-brand-border/30">
+              <div className="flex gap-3 rounded-xl border border-brand-border bg-brand-gray p-3 shadow-sm">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-brand-border/30 bg-white text-brand-green shadow-sm">
                   <MapPin size={16} />
                 </div>
                 <div>
-                  <p className="text-[9px] font-bold text-brand-dark/50 tracking-wide">แผนที่ / สถานที่</p>
-                  <p className="text-xs font-medium text-brand-dark/70 leading-snug mt-0.5">
+                  <p className="text-[9px] font-bold tracking-wide text-brand-dark/50">แผนที่ / สถานที่</p>
+                  <p className="mt-0.5 text-xs font-medium leading-snug text-brand-dark/70">
                     {selectedCustomer.map_location || 'ไม่มีข้อมูลแผนที่'}
                   </p>
                   {selectedCustomer.map_link && (
@@ -485,60 +522,85 @@ const EmployeeHomePage = () => {
                       href={selectedCustomer.map_link}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-[11px] text-brand-green font-bold mt-2 hover:underline"
+                      className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-brand-green hover:underline"
                     >
                       <ExternalLink size={10} />
-                      เปิดลิ้งแผนที่
+                      เปิดลิงก์แผนที่
                     </a>
                   )}
                 </div>
               </div>
             </div>
 
-            <div className="mt-6 flex gap-2">
+            <div className="mt-6 grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => handleShare(selectedCustomer)}
-                className="bg-white hover:bg-brand-gray px-4 py-4 rounded-xl text-brand-dark/70 hover:text-brand-dark font-black tracking-wide text-sm text-center shadow-sm border border-brand-border active:scale-95 transition-all flex items-center justify-center gap-2"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-brand-border bg-white px-4 py-4 text-sm font-black tracking-wide text-brand-dark/70 shadow-sm transition-all hover:bg-brand-gray hover:text-brand-dark active:scale-95"
               >
                 <Share2 size={16} />
                 แชร์
               </button>
 
-              {getPrimaryPhone(selectedCustomer) ? (
+              {selectedCustomer.phone ? (
                 <a
-                  href={`tel:${getPrimaryPhone(selectedCustomer)}`}
-                  className="flex-1 bg-brand-green hover:bg-brand-green-light py-4 rounded-xl text-white font-black tracking-wide text-sm text-center shadow-md border border-[#5A9207] active:scale-95 transition-all flex items-center justify-center"
+                  href={`tel:${normalizePhone(selectedCustomer.phone)}`}
+                  className="inline-flex items-center justify-center rounded-xl border border-[#5A9207] bg-brand-green py-4 text-sm font-black tracking-wide text-white shadow-md transition-all hover:bg-brand-green-light active:scale-95"
                 >
-                  โทรออกทันที
+                  โทรหลัก
                 </a>
               ) : (
                 <button
                   type="button"
                   disabled
-                  className="flex-1 bg-brand-gray py-4 rounded-xl text-brand-dark/40 font-black tracking-wide text-sm text-center border border-brand-border"
+                  className="rounded-xl border border-brand-border bg-brand-gray py-4 text-sm font-black tracking-wide text-brand-dark/40"
                 >
-                  ไม่มีเบอร์โทร
+                  ไม่มีเบอร์หลัก
+                </button>
+              )}
+
+              {selectedCustomer.backup_phone ? (
+                <a
+                  href={`tel:${normalizePhone(selectedCustomer.backup_phone)}`}
+                  className="inline-flex items-center justify-center rounded-xl border border-brand-border bg-white py-4 text-sm font-black tracking-wide text-brand-dark transition-all hover:bg-brand-gray active:scale-95"
+                >
+                  โทรสำรอง
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="rounded-xl border border-brand-border bg-brand-gray py-4 text-sm font-black tracking-wide text-brand-dark/40"
+                >
+                  ไม่มีเบอร์สำรอง
+                </button>
+              )}
+
+              {selectedCustomer.map_link ? (
+                <a
+                  href={selectedCustomer.map_link}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-brand-green/30 bg-white py-4 text-sm font-black tracking-wide text-brand-green transition-all active:scale-95"
+                >
+                  <ExternalLink size={16} />
+                  เปิดแผนที่
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="rounded-xl border border-brand-border bg-brand-gray py-4 text-sm font-black tracking-wide text-brand-dark/40"
+                >
+                  ไม่มีแผนที่
                 </button>
               )}
             </div>
 
             {shareStatus && (
-              <p className="mt-3 text-center text-[11px] font-bold text-brand-green tracking-wide">
+              <p className="mt-3 text-center text-[11px] font-bold tracking-wide text-brand-green">
                 {shareStatus}
               </p>
-            )}
-
-            {selectedCustomer.map_link && (
-              <a
-                href={selectedCustomer.map_link}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-2 inline-flex w-full items-center justify-center gap-2 bg-white py-4 rounded-xl text-brand-green font-black tracking-wide text-sm text-center shadow-sm border border-brand-green/30 active:scale-95 transition-all"
-              >
-                <ExternalLink size={16} />
-                เปิดแผนที่
-              </a>
             )}
           </div>
         </div>
@@ -546,7 +608,7 @@ const EmployeeHomePage = () => {
 
       <Link
         href="/home/add"
-        className="fixed bottom-6 right-6 w-14 h-14 bg-brand-green hover:bg-brand-green-light rounded-full text-white shadow-[0_4px_14px_rgba(101,163,13,0.5)] flex items-center justify-center active:scale-90 transition-all z-50 border-2 border-white"
+        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full border-2 border-white bg-brand-green text-white shadow-[0_4px_14px_rgba(101,163,13,0.5)] transition-all hover:bg-brand-green-light active:scale-90"
       >
         <Plus size={24} strokeWidth={3} />
       </Link>
