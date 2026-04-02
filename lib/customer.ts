@@ -33,11 +33,15 @@ export const normalizePhone = (value: string) => value.replace(/\D/g, '');
 export const formatPhoneDisplay = (value: string) => {
   const digits = normalizePhone(value);
 
-  if (digits.length !== 10) {
-    return value;
+  if (digits.length === 10) {
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
   }
 
-  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  if (digits.length === 9) {
+    return `${digits.slice(0, 2)}-${digits.slice(2, 5)}-${digits.slice(5)}`;
+  }
+
+  return value;
 };
 
 export const hydrateCustomerFormData = (
