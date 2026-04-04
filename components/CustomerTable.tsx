@@ -315,7 +315,7 @@ const CustomerTable = () => {
     <CorporateCard className="overflow-hidden border-slate-300 p-0 shadow-none">
       <div className="flex flex-col justify-between gap-4 border-b border-brand-border px-5 py-5 md:flex-row md:items-center">
         <div className="flex flex-col">
-          <h3 className="text-xl font-extrabold leading-none tracking-tight text-brand-dark">รายชื่อลูกค้าทั้งหมด</h3>
+          <h3 className="text-xl font-extrabold leading-snug tracking-tight text-brand-dark">รายชื่อลูกค้าทั้งหมด</h3>
           <p className="mt-2 text-sm font-semibold text-brand-dark/70">จัดการข้อมูลผู้ติดต่อและประวัติลูกค้าในระบบ</p>
         </div>
 
@@ -506,7 +506,7 @@ const CustomerTable = () => {
                       {viewingCustomer.name.substring(0, 1)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-xl font-black tracking-tight text-white sm:text-xl">
+                      <div className="truncate text-xl font-black leading-snug tracking-tight text-white sm:text-xl">
                         {viewingCustomer.name}
                       </div>
                       <div className="mt-2 flex flex-wrap items-center justify-center gap-2 sm:justify-start">

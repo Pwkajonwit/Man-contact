@@ -39,6 +39,13 @@ const getPrimaryPhoneDisplay = (customer: CustomerRecord) => {
 
 const getSummaryDetail = (customer: CustomerRecord) => customer.details || customer.map_location || 'ไม่มีรายละเอียด';
 
+const sortByName = (a: { name: string }, b: { name: string }) => {
+  return a.name.localeCompare(b.name, 'th', {
+    sensitivity: 'accent',
+    numeric: true,
+  });
+};
+
 const buildCustomerShareText = (customer: CustomerRecord) =>
   [
     `ชื่อลูกค้า: ${customer.name || '-'}`,
@@ -124,7 +131,7 @@ const EmployeeHomePage = () => {
         );
       });
 
-      setSearchResults(filtered);
+      setSearchResults(filtered.sort(sortByName));
       setCategories([]);
       setCustomers([]);
       return;
@@ -154,11 +161,12 @@ const EmployeeHomePage = () => {
       };
     });
 
-    setCategories(categoriesWithMetadata);
+    setCategories(categoriesWithMetadata.sort(sortByName));
     setSearchResults([]);
 
     if (categoriesWithMetadata.length === 0 && currentParentId) {
-      setCustomers(allCustomers.filter((customer) => customer.category_id === currentParentId));
+      const filteredCustomers = allCustomers.filter((customer) => customer.category_id === currentParentId);
+      setCustomers(filteredCustomers.sort(sortByName));
     } else {
       setCustomers([]);
     }
@@ -219,7 +227,7 @@ const EmployeeHomePage = () => {
                 <ArrowLeft size={16} strokeWidth={3} />
               </button>
             )}
-            <h1 className="text-xl font-bold leading-none tracking-tight text-[#29411E]">
+            <h1 className="text-xl font-bold leading-normal tracking-tight text-[#29411E]">
               {searchQuery !== ''
                 ? 'ผลการค้นหา'
                 : currentPath.length > 0
@@ -287,11 +295,16 @@ const EmployeeHomePage = () => {
                             {customer.name.substring(0, 1)}
                           </div>
                           <div className="min-w-0">
-                            <h4 className="truncate text-sm font-bold text-[#2D3748]">{customer.name}</h4>
-                            <p className="mt-0.5 truncate text-[10px] font-bold tracking-wide text-[#718096]">
-                              {getPrimaryPhoneDisplay(customer) || 'ไม่มีข้อมูลเบอร์โทร'}
+                            <h4 className="truncate text-base font-black leading-normal text-[#2D3748]">
+                              {customer.name}
+                            </h4>
+                            <p className="mt-0.5 truncate text-xs font-bold text-brand-green">
+                              ผู้ติดต่อ: {customer.contact_name || '-'}
                             </p>
-                            <p className="mt-0.5 truncate text-[9px] font-medium text-[#A0AEC0]">
+                            <p className="mt-0.5 truncate text-[11px] font-bold tracking-wide text-slate-600">
+                              โทร: {getPrimaryPhoneDisplay(customer) || 'ไม่มีข้อมูลเบอร์โทร'}
+                            </p>
+                            <p className="mt-1 truncate text-xs font-semibold text-slate-500">
                               {getSummaryDetail(customer)}
                             </p>
                           </div>
@@ -350,7 +363,9 @@ const EmployeeHomePage = () => {
                     className="group flex w-full items-center justify-between rounded-xl border border-brand-border border-l-4 border-l-brand-green bg-white p-4 shadow-sm transition-all hover:bg-brand-gray active:scale-[0.98]"
                   >
                     <div className="min-w-0 text-left">
-                      <h3 className="mb-1 truncate text-base font-bold leading-none text-brand-dark">{category.name}</h3>
+                      <h3 className="mb-1.5 truncate text-base font-bold leading-normal text-brand-dark">
+                        {category.name}
+                      </h3>
                       <p className="max-w-[180px] truncate text-[10px] font-medium text-brand-dark/60">
                         {category.subNames}
                       </p>
@@ -382,11 +397,16 @@ const EmployeeHomePage = () => {
                               {customer.name.substring(0, 1)}
                             </div>
                             <div className="min-w-0">
-                              <h4 className="truncate text-sm font-bold text-brand-dark">{customer.name}</h4>
-                              <p className="mt-0.5 truncate text-[10px] font-bold tracking-tight text-brand-dark/60">
-                                {getPrimaryPhoneDisplay(customer) || 'ไม่มีข้อมูลเบอร์โทร'}
+                              <h4 className="truncate text-base font-black leading-normal text-brand-dark">
+                                {customer.name}
+                              </h4>
+                              <p className="mt-0.5 truncate text-xs font-bold text-brand-green">
+                                ผู้ติดต่อ: {customer.contact_name || '-'}
                               </p>
-                              <p className="mt-0.5 truncate text-[9px] text-brand-dark/45">
+                              <p className="mt-0.5 truncate text-[11px] font-bold tracking-tight text-brand-dark/80">
+                                โทร: {getPrimaryPhoneDisplay(customer) || 'ไม่มีข้อมูลเบอร์โทร'}
+                              </p>
+                              <p className="mt-1 truncate text-xs font-semibold text-brand-dark/65">
                                 {getSummaryDetail(customer)}
                               </p>
                             </div>
@@ -460,7 +480,7 @@ const EmployeeHomePage = () => {
                   {selectedCustomer.name.substring(0, 1)}
                 </div>
               </div>
-              <h2 className="text-center text-xl font-black leading-none tracking-tight text-brand-dark">
+              <h2 className="text-center text-xl font-black leading-snug tracking-tight text-brand-dark">
                 {selectedCustomer.name}
               </h2>
               <span className="mt-3 rounded-full border border-brand-green/20 bg-brand-green/10 px-3 py-0.5 text-[10px] font-bold tracking-wide text-brand-green shadow-sm">
