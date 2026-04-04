@@ -100,6 +100,7 @@ const NestedCategorySelect: React.FC<NestedCategorySelectProps> = ({ onSelect, s
         const buildTree = (parentId: string | null): Category[] => {
           return allCats
             .filter(cat => cat.parent_id === parentId)
+            .sort((a, b) => a.name.localeCompare(b.name, 'th', { numeric: true, sensitivity: 'accent' }))
             .map(cat => ({
               ...cat,
               children: buildTree(cat.id)
