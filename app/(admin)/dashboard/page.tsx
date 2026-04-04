@@ -30,6 +30,13 @@ interface Category {
   totalCustomers?: number;
 }
 
+const sortByName = (a: { name: string }, b: { name: string }) => {
+  return a.name.localeCompare(b.name, 'th', {
+    sensitivity: 'accent',
+    numeric: true,
+  });
+};
+
 const DashboardPage = () => {
   const [currentPath, setCurrentPath] = useState<Category[]>([]);
   const [allCategories, setAllCategories] = useState<Category[]>([]);
@@ -102,7 +109,7 @@ const DashboardPage = () => {
         );
       });
 
-      setSearchResults(filtered);
+      setSearchResults(filtered.sort(sortByName));
       setCategories([]);
       setCustomers([]);
       return;
@@ -134,11 +141,12 @@ const DashboardPage = () => {
       };
     });
 
-    setCategories(categoriesWithMetadata);
+    setCategories(categoriesWithMetadata.sort(sortByName));
     setSearchResults([]);
 
     if (categoriesWithMetadata.length === 0 && currentParentId) {
-      setCustomers(allCustomers.filter((customer) => customer.category_id === currentParentId));
+      const filteredCustomers = allCustomers.filter((customer) => customer.category_id === currentParentId);
+      setCustomers(filteredCustomers.sort(sortByName));
     } else {
       setCustomers([]);
     }
@@ -285,7 +293,7 @@ const DashboardPage = () => {
                         </span>
                       </div>
                       <div>
-                        <h3 className="truncate text-lg font-bold leading-tight text-brand-dark">{category.name}</h3>
+                        <h3 className="truncate text-lg font-bold leading-normal text-brand-dark">{category.name}</h3>
                         <p className="mt-1 truncate text-xs font-medium text-brand-dark/50">{category.subNames}</p>
                       </div>
                     </button>
@@ -340,7 +348,7 @@ const DashboardPage = () => {
                       {viewingCustomer.name.substring(0, 1)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h2 className="truncate text-2xl font-black tracking-tight text-white sm:text-3xl">
+                      <h2 className="truncate text-2xl font-black leading-snug tracking-tight text-white sm:text-3xl">
                         {viewingCustomer.name}
                       </h2>
                       <div className="mt-2 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
@@ -511,7 +519,7 @@ const ContactCard = ({
           {customer.name.substring(0, 1)}
         </div>
         <div className="min-w-0 flex-1">
-          <h4 className="truncate text-base font-bold text-brand-dark">{customer.name}</h4>
+          <h4 className="truncate text-base font-black leading-normal text-brand-dark">{customer.name}</h4>
           <p className="mt-1 truncate text-xs font-bold text-brand-dark/50">
             {customer.contact_name || 'ไม่มีชื่อผู้ติดต่อ'}
           </p>

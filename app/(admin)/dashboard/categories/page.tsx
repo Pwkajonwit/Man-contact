@@ -15,6 +15,13 @@ interface Category {
   parent_id: string | null;
 }
 
+const sortByName = (a: { name: string }, b: { name: string }) => {
+  return a.name.localeCompare(b.name, 'th', {
+    sensitivity: 'accent',
+    numeric: true,
+  });
+};
+
 const CategoryManager = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,7 +74,9 @@ const CategoryManager = () => {
   };
 
   const renderCategoryTree = (parentId: string | null, level = 0) => {
-    const children = categories.filter(c => c.parent_id === parentId);
+    const children = categories
+      .filter((c) => c.parent_id === parentId)
+      .sort(sortByName);
     if (children.length === 0 && level > 0) return null;
 
     return (
@@ -91,7 +100,7 @@ const CategoryManager = () => {
                   </div>
                 ) : (
                   <>
-                    <span className="text-sm font-medium text-brand-dark">{cat.name}</span>
+                    <span className="text-sm font-medium leading-normal text-brand-dark">{cat.name}</span>
                     <span className="text-[10px] text-brand-dark/20 uppercase font-bold ml-2 tracking-widest">ID: {cat.id.substring(0,5)}</span>
                   </>
                 )}
